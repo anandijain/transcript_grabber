@@ -1,13 +1,21 @@
 using JSON3, CSV, DataFrames, JSONTables
 id_t_fn(t) = "data/ids/$(t)_urls.txt"
-function get_ids(cid)
-    ts = ["videos", "shorts", "streams"]
+ALL_ID_FN = "data/ids/ids.txt"
+
+const VIDEO_TYPES = ["videos", "shorts", "streams"]
+function get_ids(cid; ts=VIDEO_TYPES)
     for t in ts
         url = "https://www.youtube.com/channel/$(cid)/$(t)"
         command = `yt-dlp --flat-playlist --print "%(id)s" "$(url)"`
         run(pipeline(command, stdout=joinpath(@__DIR__, id_t_fn(t))))
     end
+    ids = read_ids_from_files(ts)
+    write(joinpath(@__DIR__, all_id_fn), join(ids, '\n'))
+    ids
 end
+
+read_ids_from_files(ts=VIDEO_TYPES) = reduce(vcat, readlines.(id_t_fn.(ts)))
+
 grab_cmd(id_fn) = `yt-dlp --write-info-json --write-auto-subs --skip-download -a $id_fn`
 get_video_id(s) = s[only(findlast("[", s))+1:only(findlast("]", s))-1]
 
@@ -72,8 +80,9 @@ mkpath(joinpath(@__DIR__, "./data/metadata"))
 
 
 cid = "UCnKJ-ERcOd3wTpG7gA5OI_g"
+ids = get_ids(cid)
 
-ids = reduce(vcat, readlines.(id_fn.(ts)))
+
 all_id_fn = "data/ids/ids.txt"
 write(joinpath(@__DIR__, all_id_fn), join(ids, '\n'))
 
