@@ -1,12 +1,5 @@
 using JSON3, CSV, DataFrames, JSONTables
 id_t_fn(t) = "data/ids/$(t)_urls.txt"
-
-mkpath(joinpath(@__DIR__, "./data/ids"))
-mkpath(joinpath(@__DIR__, "./data/transcripts"))
-mkpath(joinpath(@__DIR__, "./data/metadata"))
-
-
-cid = "UCnKJ-ERcOd3wTpG7gA5OI_g"
 function get_ids(cid)
     ts = ["videos", "shorts", "streams"]
     for t in ts
@@ -15,58 +8,10 @@ function get_ids(cid)
         run(pipeline(command, stdout=joinpath(@__DIR__, id_t_fn(t))))
     end
 end
-
-ids = reduce(vcat, readlines.(id_fn.(ts)))
-all_id_fn = "data/ids/ids.txt"
-write(joinpath(@__DIR__, all_id_fn), join(ids, '\n'))
-
-
 grab_cmd(id_fn) = `yt-dlp --write-info-json --write-auto-subs --skip-download -a $id_fn`
-grab = grab_cmd(all_id_fn)
-# run(`grab`) # just run this in command line 
-
-j_ex = "C:/Users/anand/src/transcript_grabber/data/metadata/locking in： de anza dmt 80 exam 2 review [OHplC-nztVI].info.json"
-jex2 = "C:/Users/anand/src/transcript_grabber/data/metadata/pitch assembly and 2 motor control [uamfAMClo8A].info.json"
-j = JSON3.read(read(j_ex))
-j2 = JSON3.read(read(jex2))
-
-# throws where j and j2 one is video other is stream `release_timestamp keyerror`
-# df = DataFrame([j, j2])
 get_video_id(s) = s[only(findlast("[", s))+1:only(findlast("]", s))-1]
-mfns = readdir("data/metadata/"; join=true)
-ms = @. JSON3.read(read(mfns));
-ids = get_video_id.(mfns)
-txts = ids .=> ms;
-dtxts = Dict(txts)
 
-vidids = readlines(id_t_fn("videos"))
-vidjs = getd(dtxts, vidids)
-# df = DataFrame(vidjs)
-
-ks = collect(intersect(keys.(vidjs)...))
-
-j = vidjs[1]
-ds = map(x->getd(x, ks), vidjs)
-x = permutedims(reduce(hcat, ds))
-df = DataFrame(Tables.table(x;header=ks))
-
-CSV.write("meta.csv", df)
-
-cols = [:id,
-:title,
-:view_count,
-:duration,
-:timestamp,
-:like_count,
-:categories,
-:filesize_approx]
-
-d = df[:, cols]
-sort!(d, :duration;rev=true)
-sort!(d, :like_count;rev=true)
-
-
-function getdskip(d, ks) 
+function getdskip(d, ks)
     vs = []
     for k in ks
         !haskey(d, k) && continue
@@ -74,19 +19,6 @@ function getdskip(d, ks)
     end
     vs
 end
-
-
-sids = readlines(id_t_fn("streams"))
-sjs = getdskip(dtxts, sids)
-
-sks = collect(intersect(keys.(sjs[2:end])...))
-print(sks)
-
-sds = map(x -> getd(x, sks), sjs[2:end])
-sdf = DataFrame(Tables.table(permutedims(reduce(hcat, sds)); header=sks))
-ss =  sdf[:, cols]
-sort!(ss, :view_count;rev=true)
-
 function parse_segment(s)
     if !haskey(s, "tOffsetMs")
         offset = 0
@@ -118,6 +50,91 @@ function token_tally(enc, txt)
     t = tally(v)
     map(x -> string(enc.decode([x[1]])) => x[2], t)
 end
+function get_json_transcript(url)
+    subtitle_file = "temp_subtitle"  # Temporary file name
+    run(`yt-dlp --sub-format json3 --write-auto-subs --skip-download --output $subtitle_file $url`)
+    fn = subtitle_file * ".en.json3"
+    transcript = read(fn, String)
+    rm(fn)
+    return JSON3.read(transcript)
+end
+
+# example https://www.youtube.com/playlist?list=PL79kqjVnD2EPVIWg-ihbN_tPdFki3OzMf
+function get_playlist_ids(url)
+    command = `yt-dlp --flat-playlist --print "%(id)s" "$(url)"`
+    split(read(command, String))
+end
+
+
+mkpath(joinpath(@__DIR__, "./data/ids"))
+mkpath(joinpath(@__DIR__, "./data/transcripts"))
+mkpath(joinpath(@__DIR__, "./data/metadata"))
+
+
+cid = "UCnKJ-ERcOd3wTpG7gA5OI_g"
+
+ids = reduce(vcat, readlines.(id_fn.(ts)))
+all_id_fn = "data/ids/ids.txt"
+write(joinpath(@__DIR__, all_id_fn), join(ids, '\n'))
+
+
+grab = grab_cmd(all_id_fn)
+# run(`grab`) # just run this in command line 
+
+j_ex = "C:/Users/anand/src/transcript_grabber/data/metadata/locking in： de anza dmt 80 exam 2 review [OHplC-nztVI].info.json"
+jex2 = "C:/Users/anand/src/transcript_grabber/data/metadata/pitch assembly and 2 motor control [uamfAMClo8A].info.json"
+j = JSON3.read(read(j_ex))
+j2 = JSON3.read(read(jex2))
+
+# throws where j and j2 one is video other is stream `release_timestamp keyerror`
+# df = DataFrame([j, j2])
+
+mfns = readdir("data/metadata/"; join=true)
+ms = @. JSON3.read(read(mfns));
+ids = get_video_id.(mfns)
+txts = ids .=> ms;
+dtxts = Dict(txts)
+
+vidids = readlines(id_t_fn("videos"))
+vidjs = getd(dtxts, vidids)
+# df = DataFrame(vidjs)
+
+ks = collect(intersect(keys.(vidjs)...))
+
+j = vidjs[1]
+ds = map(x -> getd(x, ks), vidjs)
+x = permutedims(reduce(hcat, ds))
+df = DataFrame(Tables.table(x; header=ks))
+
+CSV.write("meta.csv", df)
+
+cols = [:id,
+    :title,
+    :view_count,
+    :duration,
+    :timestamp,
+    :like_count,
+    :categories,
+    :filesize_approx]
+
+d = df[:, cols]
+sort!(d, :duration; rev=true)
+sort!(d, :like_count; rev=true)
+
+
+
+sids = readlines(id_t_fn("streams"))
+sjs = getdskip(dtxts, sids)
+
+sks = collect(intersect(keys.(sjs[2:end])...))
+print(sks)
+
+sds = map(x -> getd(x, sks), sjs[2:end])
+sdf = DataFrame(Tables.table(permutedims(reduce(hcat, sds)); header=sks))
+ss = sdf[:, cols]
+sort!(ss, :view_count; rev=true)
+
+
 fns = filter(endswith(".json3"), readdir("data/transcripts"; join=true))
 ids = get_video_id.(fns)
 js = @. JSON3.read(read(fns));
@@ -128,4 +145,9 @@ dtxts = Dict(txts)
 evs = j.events[2:end]
 
 
-write("foo.txt", join(last.(txts)))
+write("dataset.txt", join(last.(txts)))
+
+# yt-dlp --sub-format json3 --write-auto-subs --skip-download https://www.youtube.com/watch?v=Sqr-PdVYhY4
+url = "https://www.youtube.com/watch?v=Sqr-PdVYhY4"
+j = get_json_transcript(url)
+t = get_txt_transcipt(j)
